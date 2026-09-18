@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#111827">
+  <title>CrazyAI 🤖</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">🤖</div>
+        <div>
+          <h1>CrazyAI</h1>
+          <p>هوش مصنوعی خنده‌دار و جدی</p>
+        </div>
+      </div>
+
+      <button id="clearBtn" class="icon-btn" title="پاک کردن چت">
+        🗑️
+      </button>
+    </header>
+
+    <main class="chat-area" id="chatArea">
+
+      <section class="welcome" id="welcome">
+        <div class="big-robot">🤖</div>
+        <h2>سلام! من CrazyAI هستم 😺</h2>
+        <p>
+          هر چیزی خواستی بپرس.
+          گاهی جدی جواب می‌دم، گاهی هم مغزم هنگ می‌کنه 😂
+        </p>
+
+        <div class="suggestions">
+          <button class="suggestion">سلام CrazyAI!</button>
+          <button class="suggestion">خودت را معرفی کن</button>
+          <button class="suggestion">یک جوک بگو 😂</button>
+          <button class="suggestion">۲۵ × ۴ چند می‌شود؟</button>
+        </div>
+      </section>
+
+    </main>
+
+    <div class="typing" id="typing">
+      <span></span>
+      <span></span>
+      <span></span>
+      <label>CrazyAI در حال فکر کردن است...</label>
+    </div>
+
+    <div class="statusbar">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText">آماده</span>
+      <span class="memory-label">🧠 حافظه فعال</span>
+    </div>
+
+    <form class="composer" id="composer">
+
+      <button
+        type="button"
+        id="voiceBtn"
+        class="round-btn"
+        title="صحبت کردن با CrazyAI">
+        🎤
+      </button>
+
+      <textarea
+        id="messageInput"
+        rows="1"
+        maxlength="4000"
+        placeholder="پیامت را بنویس..."
+        autocomplete="off"></textarea>
+
+      <button
+        type="submit"
+        id="sendBtn"
+        class="send-btn"
+        title="ارسال">
+        ➤
+      </button>
+
+    </form>
+
+    <div class="voice-status" id="voiceStatus">
+      برای صحبت کردن روی 🎤 بزن
+    </div>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
