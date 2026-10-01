@@ -1,0 +1,406 @@
+const OPENROUTER_API_KEY="YOUR_OPENROUTER_API_KEY_HERE";
+const OPENROUTER_MODEL="openrouter/free";
+const MAX_CODE=23000,MAX_OUT=20000;
+
+const chatArea=document.getElementById("chatArea");
+const input=document.getElementById("messageInput");
+const composer=document.getElementById("composer");
+const sendBtn=document.getElementById("sendBtn");
+const voiceBtn=document.getElementById("voiceBtn");
+const clearBtn=document.getElementById("clearBtn");
+const typing=document.getElementById("typing");
+const statusText=document.getElementById("statusText");
+const voiceStatus=document.getElementById("voiceStatus");
+const toast=document.getElementById("toast");
+
+const MEMORY_KEY="crazyAI_memory";
+const CHAT_KEY="crazyAI_chat";
+
+let memory={},chatHistory=[],lastAIMessage="";
+let recognition=null,isListening=false,voiceAvailable=false;
+
+function readJSON(k,d){
+  try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}
+}
+memory=readJSON(MEMORY_KEY,{});
+chatHistory=readJSON(CHAT_KEY,[]);
+if(!memory||typeof memory!=="object"||Array.isArray(memory))memory={};
+if(!Array.isArray(chatHistory))chatHistory=[];
+
+function saveMemory(){
+  try{localStorage.setItem(MEMORY_KEY,JSON.stringify(memory))}catch(e){}
+}
+function saveChat(){
+  try{localStorage.setItem(CHAT_KEY,JSON.stringify(chatHistory))}catch(e){}
+}
+function toastMsg(t){
+  if(!toast)return;
+  toast.textContent=t;
+  toast.classList.add("show");
+  setTimeout(()=>toast.classList.remove("show"),2200);
+}
+function status(t){
+  if(statusText)statusText.textContent=t;
+}
+function showTyping(){
+  if(typing)typing.style.display="flex";
+  status("CrazyAI در حال فکر کردن است...");
+}
+function hideTyping(){
+  if(typing)typing.style.display="none";
+  status("آماده");
+}
+
+function norm(t){
+  return String(t).toLowerCase()
+    .replace(/ي/g,"ی").replace(/ى/g,"ی")
+    .replace(/ك/g,"ک").trim();
+}
+function clean(t){
+  return norm(t).replace(/[؟?!.,،؛:]/g,"");
+}
+function has(t,a){return a.some(x=>t.includes(x))}
+function pick(a){return a[Math.floor(Math.random()*a.length)]}
+
+function createMessage(text,sender){
+  const e=document.createElement("div");
+  e.className=sender==="user"?"message user-message":"message ai-message";
+  e.textContent=text;
+  return e;
+}
+function addMessage(text,sender,save=true){
+  if(!chatArea)return;
+  const w=document.getElementById("welcome");
+  if(w)w.remove();
+  chatArea.appendChild(createMessage(text,sender));
+  chatArea.scrollTop=chatArea.scrollHeight;
+  if(save){
+    chatHistory.push({sender,text,time:Date.now()});
+    saveChat();
+  }
+}
+function loadChat(){
+  if(!chatHistory.length)return;
+  const w=document.getElementById("welcome");
+  if(w)w.remove();
+  chatHistory.forEach(x=>{
+    if(x&&typeof x.text==="string")
+      addMessage(x.text,x.sender==="user"?"user":"ai",false);
+  });
+  const x=chatHistory[chatHistory.length-1];
+  if(x&&x.sender==="ai")lastAIMessage=x.text;
+}
+
+function remember(text){
+  const m=text.match(/(?:اسمم|نامم|اسم من)\s+([آ-یA-Za-z0-9_]+)/i);
+  if(m){
+    memory.name=m[1].trim();
+    saveMemory();
+  }
+  const n=clean(text);
+  if(n.includes("دوست دارم")||n.includes("علاقه دارم")){
+    memory.lastInterest=text;
+    saveMemory();
+  }
+}
+function greeting(){
+  const n=memory.name?` ${memory.name}`:"";
+  return pick([
+    `سلام${n}! 😺`,
+    `درود${n}! 🤖`,
+    "سلاممم 😎 CrazyAI آنلاین است!",
+    "هی! 😺 چه خبر؟",
+    "سلام! مغز مصنوعی من آماده‌ست 🧠🤖"
+  ]);
+}
+
+function buildWelcome(){
+  const s=document.createElement("section");
+  s.className="welcome";
+  s.id="welcome";
+  s.innerHTML=`
+    <div class="big-robot">🤖</div>
+    <h2>سلام! من CrazyAI هستم 😺</h2>
+    <p>هر چیزی خواستی بپرس.</p>
+    <div class="suggestions">
+      <button class="suggestion">سلام CrazyAI!</button>
+      <button class="suggestion">خودت را معرفی کن</button>
+      <button class="suggestion">یک جوک بگو 😂</button>
+      <button class="suggestion">۲۵ × ۴ چند می‌شود؟</button>
+    </div>`;
+  return s;
+}
+function attachSuggestions(){
+  document.querySelectorAll(".suggestion").forEach(b=>{
+    b.addEventListener("click",()=>{
+      if(!input)return;
+      input.value=b.textContent.trim();
+      input.dispatchEvent(new Event("input"));
+      sendMessage();
+    });
+  });
+}
+
+function clearChat(){
+  chatHistory=[];lastAIMessage="";
+  try{localStorage.removeItem(CHAT_KEY)}catch(e){}
+  if(chatArea){
+    chatArea.innerHTML="";
+    chatArea.appendChild(buildWelcome());
+    attachSuggestions();
+  }
+  if(window.speechSynthesis)speechSynthesis.cancel();
+  hideTyping();
+  toastMsg("چت پاک شد 🧹🤖");
+}
+function resetMemory(){
+  memory={};
+  try{localStorage.removeItem(MEMORY_KEY)}catch(e){}
+  toastMsg("حافظه پاک شد 🧠");
+}
+
+function wantsCode(t){
+  t=clean(t);
+  return has(t,[
+    "کد بنویس","کدنویسی کن","کد html","کد css",
+    "کد js","javascript","python","java","c++",
+    "کد نویسی","برنامه بنویس","اسکریپت بنویس",
+    "script بنویس","code"
+  ]);
+}
+function wantsSearch(t){
+  t=clean(t);
+  return has(t,[
+    "سرچ کن","جستجو کن","در اینترنت","اخبار",
+    "لینک بده","سایت پیدا کن","گوگل کن"
+  ]);
+}
+function searchFallback(){
+  return "متأسفم من سرور بک اند و یا دیتا بیس ندارم میتوانید اسکرین شات و یا توضیح راجب وب سایت بگید";
+}
+
+function apiHistory(){
+  return chatHistory.slice(-20).filter(x=>x&&typeof x.text==="string")
+    .map(x=>({
+      role:x.sender==="user"?"user":"assistant",
+      content:x.text
+    }));
+}
+
+function extract(data){
+  const c=data?.choices?.[0]?.message?.content;
+  if(typeof c==="string")return c.trim();
+  if(Array.isArray(c))
+    return c.map(x=>typeof x?.text==="string"?x.text:"").join("").trim();
+  return "";
+}
+
+async function askAPI(text,files=[]){
+  text=String(text||"").trim();
+  if(!text)return"یه چیزی بنویس 😺";
+
+  remember(text);
+
+  if(wantsSearch(text))return searchFallback();
+
+  if(wantsCode(text)&&text.length>MAX_CODE)
+    return"درخواست کد بیشتر از 23K character است و نمی‌توانم آن را پردازش کنم.";
+
+  if(!OPENROUTER_API_KEY||
+     OPENROUTER_API_KEY==="YOUR_OPENROUTER_API_KEY_HERE")
+    throw Error("OpenRouter API key تنظیم نشده است.");
+
+  const messages=[{
+    role:"system",
+    content:
+      "You are CrazyAI, a helpful general-purpose AI assistant. "+
+      "Answer normally and directly. You can answer questions, explain "+
+      "things, solve problems, translate, summarize, brainstorm, debug "+
+      "and write code. For coding requests support normal programming "+
+      "languages. Do not claim to browse the internet unless a search "+
+      "tool was actually used."
+  }];
+
+  const old=apiHistory();
+  if(old.length&&old[old.length-1].role==="user"&&old[old.length-1].content===text)
+    old.pop();
+  messages.push(...old);
+
+  let content=text;
+
+  if(Array.isArray(files)&&files.length){
+    content=[{type:"text",text}];
+    files.forEach(f=>{
+      const u=typeof f==="string"?f:(f?.image_url||f?.url||"");
+      if(u)content.push({type:"image_url",image_url:{url:u}});
+    });
+  }
+
+  messages.push({role:"user",content});
+
+  const r=await fetch(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer "+OPENROUTER_API_KEY,
+        "HTTP-Referer":location.origin,
+        "X-Title":"CrazyAI"
+      },
+      body:JSON.stringify({
+        model:OPENROUTER_MODEL,
+        messages,
+        max_tokens:8192,
+        temperature:.7
+      })
+    }
+  );
+
+  let data={};
+  try{data=await r.json()}catch(e){throw Error("پاسخ API قابل خواندن نیست.")}
+
+  if(!r.ok){
+    const em=data?.error?.message||data?.error?.code||"OpenRouter API error";
+    if(r.status===429)throw Error("سقف درخواست رایگان فعلی تمام شده است.");
+    if(r.status===401)throw Error("API Key نامعتبر است.");
+    if(r.status===403)throw Error("دسترسی به API رد شد.");
+    throw Error(em);
+  }
+
+  let answer=extract(data)||"پاسخی از AI دریافت نشد.";
+
+  if(answer.length>MAX_OUT)
+    answer=answer.slice(0,MAX_OUT)+
+      "\n\n[پاسخ به محدودیت 20K character رسید.]";
+
+  return answer.trim();
+}
+
+async function sendMessage(){
+  if(!input)return;
+  const text=input.value.trim();
+  if(!text)return;
+
+  addMessage(text,"user",true);
+  input.value="";
+  input.style.height="auto";
+  if(sendBtn)sendBtn.disabled=true;
+  showTyping();
+
+  try{
+    const answer=await askAPI(text);
+    lastAIMessage=answer;
+    addMessage(answer,"ai",true);
+    speak(answer);
+  }catch(e){
+    console.error("CrazyAI API error:",e);
+    addMessage(
+      "ارتباط با API برقرار نشد. لطفاً دوباره تلاش کن. 🤖\n\nجزئیات: "+
+      (e?.message||"Unknown error"),
+      "ai",true
+    );
+  }
+
+  hideTyping();
+  if(sendBtn)sendBtn.disabled=false;
+}
+
+function speak(text){
+  if(!window.speechSynthesis||!text)return;
+  try{
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang="fa-IR";u.rate=.95;u.pitch=.9;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function setupVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)return;
+  try{
+    recognition=new SR();
+    recognition.lang="fa-IR";
+    recognition.continuous=false;
+    recognition.interimResults=false;
+    voiceAvailable=true;
+
+    recognition.onstart=()=>{
+      isListening=true;
+      if(voiceStatus)voiceStatus.textContent="🎤 گوش می‌دم...";
+      if(voiceBtn)voiceBtn.classList.add("listening");
+    };
+
+    recognition.onresult=e=>{
+      const t=e.results?.[0]?.[0]?.transcript?.trim();
+      if(t&&input){
+        input.value=t;
+        input.dispatchEvent(new Event("input"));
+        sendMessage();
+      }
+    };
+
+    recognition.onerror=e=>console.error("Speech recognition:",e.error);
+
+    recognition.onend=()=>{
+      isListening=false;
+      if(voiceBtn)voiceBtn.classList.remove("listening");
+      if(voiceStatus)
+        voiceStatus.textContent="برای صحبت کردن روی 🎤 بزن";
+    };
+  }catch(e){}
+}
+
+if(composer)
+  composer.addEventListener("submit",e=>{
+    e.preventDefault();
+    sendMessage();
+  });
+
+if(input){
+  input.addEventListener("keydown",e=>{
+    if(e.key==="Enter"&&!e.shiftKey){
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  input.addEventListener("input",()=>{
+    input.style.height="auto";
+    input.style.height=Math.min(input.scrollHeight,160)+"px";
+  });
+}
+
+if(clearBtn)clearBtn.addEventListener("click",clearChat);
+
+if(voiceBtn)
+  voiceBtn.addEventListener("click",()=>{
+    if(voiceAvailable&&!isListening&&recognition){
+      try{recognition.start()}catch(e){}
+    }
+  });
+
+window.clearCrazyAIChat=clearChat;
+window.resetCrazyAIMemory=resetMemory;
+
+window.CrazyAI={
+  version:"4.0-free-api",
+  ask:q=>askAPI(String(q)),
+  askWithImages:(q,f)=>askAPI(String(q),f),
+  getMemory:()=>memory,
+  getChat:()=>chatHistory,
+  clearChat,
+  resetMemory
+};
+
+setupVoice();
+loadChat();
+attachSuggestions();
+hideTyping();
+status("آماده");
+
+if(voiceStatus)
+  voiceStatus.textContent=voiceAvailable
+    ?"برای صحبت کردن روی 🎤 بزن"
+    :"🎤 تشخیص صدا در این مرورگر در دسترس نیست.";
